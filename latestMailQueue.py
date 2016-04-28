@@ -44,6 +44,7 @@ def read(q,list_mailobj,InfoSize):
 		iGetCount = 0
 		strContext = ''
 		time.sleep(10)
+		#print "read"
 		MaxSendlines = list_mailobj[index].getSendLines()
 		while not q.empty():
 			#set read line limited,so that send many lines by one email  (add on 2016/04/28 by liugao)
@@ -200,6 +201,9 @@ class MonitorLog:
 	def setLogName(self,strlogName):
 		self.logZoneName = strlogName
 		
+	def GetLogName(self):
+		return self.logZoneName
+		
 	def setLogPostfix(self,strlogfix):
 		self.logPostfix = strlogfix
 	
@@ -212,6 +216,7 @@ class MonitorLog:
 		#
 		waittime = 1.25
 		waittimescount = 0
+		print 'monitor(self)' + str(os.getpid())
 		while True:
 			# get date
 			thistime = time.strftime(self.dateFormat, time.localtime(time.time()))
@@ -227,7 +232,7 @@ class MonitorLog:
 			else :
 				waittimescount = 0
 				
-			print currfilename
+			#print currfilename
 			if filename != currfilename:
 				count=0
 				filename = currfilename
@@ -235,7 +240,7 @@ class MonitorLog:
 			#fileobject = open(filename,'r')
 			cache_data = linecache.getlines(filename)
 			cachelines = len(cache_data)
-			print "Lines: " + str(cachelines) + " Now:"+str(time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(time.time())))
+			#print "Lines: " + str(cachelines) + " Now:"+str(time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(time.time())))
 			currLineNumber = 0
 			#try: 
 			if currLineNumber >= cachelines :
@@ -253,22 +258,25 @@ class MonitorLog:
 							print item[0],item[1]
 						#send email to notify someone
 						print "lineNum:" + str(lineNum)
-						for itimes in range(5):
-							if self.canSend :
-								'''
-								try :
-									self.mailobj.setsubject('Server Error')
-									linelinetext = "ServerID: " + self.serverID + "\n"+ lineline + "\nnow :" +str(time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(time.time())))
-									self.mailobj.settext(linelinetext)
-									self.mailobj.sendmail()
-									self.mailobj.clearContext()
-									linelinetext = ""
-								except Exception,e:
-									print str(e)
-								time.sleep(5)
-								'''
-								write(self.contentQueue,self.lock,lineline)
-							itimes += 1
+						#for itimes in range(2):
+						if self.canSend :
+							'''
+							try :
+								self.mailobj.setsubject('Server Error')
+								linelinetext = "ServerID: " + self.serverID + "\n"+ lineline + "\nnow :" +str(time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(time.time())))
+								self.mailobj.settext(linelinetext)
+								self.mailobj.sendmail()
+								self.mailobj.clearContext()
+								linelinetext = ""
+							except Exception,e:
+								print str(e)
+							time.sleep(5)
+							'''
+							self.lock.acquire() #add lock
+							self.contentQueue.put(lineline)
+							self.lock.release() #release lock
+							#write(self.contentQueue,self.lock,lineline)
+						#itimes += 1
 							#print "times :" + str(itimes)
 					else:
 						print str(lineNum) + " :Not Found"
@@ -289,6 +297,9 @@ class MonitorLog:
 				#fileobject.close() 
 			time.sleep(5)
 			linecache.clearcache()
+			
+def monitorlogprocess(monitorobjprc):
+	monitorobjprc.monitor()
 		
 if __name__ == "__main__":
 	
@@ -301,6 +312,7 @@ if __name__ == "__main__":
 	cfgobj = ReadConf(ConfFile)
 	#get mail service providers number
 	InfoSize = cfgobj.getInt('Global','InfoSize')
+	ServerMonitor = cfgobj.getInt('Global','ServerMonitor')
 	list_mailobj = []
 	
 	for i in range(InfoSize):
@@ -313,13 +325,8 @@ if __name__ == "__main__":
 		Encoding = cfgobj.get('MailInfo_%d'%i,'Encoding')
 		
 		ServerID = cfgobj.get('ServerInfo_%d'%i,'ServerID')
-		OnceReadLines = cfgobj.getInt('ServerInfo_%d'%i,'OnceReadLines')
-		OnceSendLines = cfgobj.get('ServerInfo_%d'%i,'OnceSendLines')
-		ZoneLogPath = cfgobj.get('ServerInfo_%d'%i,'ZoneLogPath')
 		
-		ZoneLogName=cfgobj.get('logInfo_%d'%i,'ZoneLogName')
-		DateFormat=cfgobj.get('logInfo_%d'%i,'DateFormat')
-		LogPostfix =cfgobj.get('logInfo_%d'%i,'LogPostfix')
+		OnceSendLines = cfgobj.get('ServerInfo_%d'%i,'OnceSendLines')
 		
 		#print Username,Pwd,Stmp,From,To,Encoding
 		#print ServerID,OnceReadLines,ZoneLogName,DateFormat,LogPostfix
@@ -335,22 +342,27 @@ if __name__ == "__main__":
 	manager = multiprocessing.Manager()
 	contentQueue = manager.Queue()
 	lock = manager.Lock() #init lock
-	p = Pool(1)
+	#read process is single process so the number is ServerMonitor+1
+	p = multiprocessing.Pool(ServerMonitor+1)
 	pr = p.apply_async(read,args=(contentQueue,list_mailobj,InfoSize))
+	#print "ServerMonitor:",ServerMonitor
+	
+	for index in range(ServerMonitor):
+		LogPath = cfgobj.get('logInfo_%d'%index,'LogPath')
+		LogName=cfgobj.get('logInfo_%d'%index,'LogName')
+		DateFormat=cfgobj.get('logInfo_%d'%index,'DateFormat')
+		LogPostfix =cfgobj.get('logInfo_%d'%index,'LogPostfix')
+		OnceReadLines = cfgobj.getInt('logInfo_%d'%index,'OnceReadLines')
+		
+		monitorobj= MonitorLog(OnceReadLines,LogPath,contentQueue,lock)
+		monitorobj.setDateFormat(DateFormat)
+		monitorobj.setLogName(LogName)
+		monitorobj.setLogPostfix(LogPostfix)
+		monitorobj.setSendMailFlag(1)
+		#print str(index) + LogPath + LogName + DateFormat + LogPostfix + str(OnceReadLines)
+		p.apply_async(monitorlogprocess,args=(monitorobj,))
+	
 	p.close()
-	#p = Process(target=read,args=(contentQueue,list_mailobj,InfoSize))
-	#p.start()
-	#print "Main PID:"+str(os.getpid())
-	
-	monitorobj = MonitorLog(OnceReadLines,ZoneLogPath,contentQueue,lock)
-	monitorobj.setDateFormat(DateFormat)
-	monitorobj.setLogName(ZoneLogName)
-	monitorobj.setLogPostfix(LogPostfix)
-	monitorobj.setSendMailFlag(1)
-	monitorobj.monitor()
-	
-	
-	
-	
-	
-	
+	while True:
+		time.sleep(9)
+		#print "main"
