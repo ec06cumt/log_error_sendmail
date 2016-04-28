@@ -1,4 +1,4 @@
-﻿#!/usr/bin/Python
+#!/usr/bin/python
 # -*- coding:utf-8 -*-
 #author:liugao,516587331@qq.com
 #desc: read config to send mail by python
@@ -14,54 +14,84 @@ import time
 import re
 from multiprocessing import Process,Queue,Pool
 import multiprocessing
+#from multiprocessing import Process,Queue
  
 import smtplib  
 from email.mime.text import MIMEText  
 from email.header import Header
 
 strPattern='\[(.*)\]\s+<(.*?)>\s+Failed to decode(.*?)'
-logZoneName = "GameZoneServer_"
-logPostfix = ".log"
-dateFormat = '%Y-%m-%d'
+#logZoneName = "GameZoneServer_"
+#logPostfix = ".log"
+#dateFormat = '%Y-%m-%d'
 
 
-#由于是在主进程中写入队列
+#input msg into Queue
 def write(q,lock,linetext):
 	if linetext:
-		lock.acquire() #加上锁
+		lock.acquire() #add lock
 		q.put(linetext)
-		lock.release() #释放锁
+		lock.release() #release lock
 
-#单独开一进程，进行发邮件，这里的邮件分发策略可以自己定义。
-#普通邮箱，一般连续发送30-40封邮件，邮件服务器就会封IP
-#所以，最好切换不同的邮箱服务商，来避免这样的问题。
-#
+#you can define your email strategy with mutiprocess.
+#for some reason,some email service providers might forbit your email address,
+#so you had to use serval email address.
 	
 def read(q,list_mailobj,InfoSize):
 	iCount = 0
 	while True:
 		index = iCount % InfoSize
-		if not q.empty():
+		iGetCount = 0
+		strContext = ''
+		time.sleep(10)
+		MaxSendlines = list_mailobj[index].getSendLines()
+		while not q.empty():
+			#set read line limited,so that send many lines by one email  (add on 2016/04/28 by liugao)
 			lineline = q.get(False)
 			if lineline:
+				iGetCount += 1
+				strContext += lineline
+			else:
+				print 'context is null'
+			#iGetCount reach max sendlines ,then send mail right now and sleep some seconds (add on 2016/04/28 by liugao)
+			#
+			#print "Read PID:"+str(os.getpid())+"index:"+str(index) + "now:"+str(iGetCount)+"sendlines:"+str(MaxSendlines)
+			if iGetCount == int(MaxSendlines):
 				try:
 					list_mailobj[index].setsubject('Server Error')
-					linelinetext = "区服ID: " + list_mailobj[index].getSeverID() + "\n"+ lineline + "\nnow :" +str(time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(time.time())))
+					linelinetext = "ServerID: " + list_mailobj[index].getSeverID() + "\n"+ strContext + "\nnow :" +str(time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(time.time())))
 					list_mailobj[index].settext(linelinetext)
 					list_mailobj[index].sendmail()
 					list_mailobj[index].clearContext()
 					linelinetext = ''
-					lineline = ''
 				except Execption,e:
 					print str(e)
+				
+				#print "max:",iGetCount
+				iGetCount = 0	
+				strContext = ''
+				#wait 10s and send mail
 				time.sleep(10)
-			else:
-				print 'context is null'
-		else:
-			time.sleep(10)
-			
-		iCount += 1
+				break
 
+		# if iGetCunt less oncesendlines and queue is empty
+		if iGetCount > 0 and iGetCount < int(MaxSendlines):
+			# send mail rightnow
+			try:
+				list_mailobj[index].setsubject('Server Error')
+				linelinetext = "ServerID: " + list_mailobj[index].getSeverID() + "\n"+ strContext + "\nnow :" +str(time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(time.time())))
+				list_mailobj[index].settext(linelinetext)
+				list_mailobj[index].sendmail()
+				list_mailobj[index].clearContext()
+				linelinetext = ''
+			except Execption,e:
+				print str(e)
+			
+			#print "other:",iGetCount,MaxSendlines
+			iGetCount = 0
+			strContext = ''
+
+		iCount += 1
 
 class ReadConf:
 	def __init__(self,config_file_path):
@@ -90,7 +120,7 @@ class ReadConf:
 		
 		
 class MailHelper:
-	def __init__(self,Subject,Username,Pwd,Stmp,From,To,ServerID,Encoding):
+	def __init__(self,Subject,Username,Pwd,Stmp,From,To,ServerID,Encoding,OnceSendLines):
 		self.subject = Subject
 		self.username = Username
 		self.pwd = Pwd
@@ -99,6 +129,10 @@ class MailHelper:
 		self.recevier = To
 		self.encoding = Encoding
 		self.ServerID = ServerID
+		self.onceSendLines = OnceSendLines
+		
+	def getSendLines(self):
+		return self.onceSendLines
 		
 	def getSubject(self):
 		return self.subject
@@ -123,7 +157,7 @@ class MailHelper:
 		self.subject = strSubject
 	
 	def sendmail(self):
-		msg = MIMEText(_text=self.text, _charset=self.encoding) #中文需参数‘utf-8’，单字节字符不需要  
+		msg = MIMEText(_text=self.text, _charset=self.encoding) #encode using utf-8
 		msg['Subject'] = Header(self.subject, self.encoding) 
 		msg['From'] = self.sender
 		msg['To'] = self.recevier 
@@ -144,7 +178,7 @@ class MailHelper:
 			print "Send mail failed"
 		smtp.quit()
 
-#支持动态加载文件，策略非常简单，读完内容以后，每隔5秒重新读一次内容，跳过之前读过的行
+#read log file per 5s
 class MonitorLog:
 	def __init__(self,OnceReadLines,zoneLogPath,contentQueue,lock):
 		self.linespilte = OnceReadLines
@@ -156,7 +190,7 @@ class MonitorLog:
 		self.contentQueue = contentQueue
 		self.lock = lock
 		
-	#是否发送邮件flag设置
+	#send mailor not
 	def setSendMailFlag(self,bCanSend):
 		self.canSend = bCanSend
 	
@@ -169,17 +203,17 @@ class MonitorLog:
 	def setLogPostfix(self,strlogfix):
 		self.logPostfix = strlogfix
 	
-	#分析log文件
+	#
 	def monitor(self):
 		print 'filename %s' % self.logZonePath
 		filename=""
-		#已经匹配的行数
+		#had read lines
 		count = 0
-		#指数等待
+		#
 		waittime = 1.25
 		waittimescount = 0
 		while True:
-			# 当前时间,获取当前系统时间
+			# get date
 			thistime = time.strftime(self.dateFormat, time.localtime(time.time()))
 			currfilename = self.logZonePath + "\\" + self.logZoneName +"_"+ str(thistime)+ self.logPostfix
 			
@@ -210,24 +244,21 @@ class MonitorLog:
 			for lineNum in range(count,cachelines):
 				lineline = cache_data[lineNum]
 				#print lineline
-				# 判断内容是否为空
 				if lineline:
-					#分析行内容
-
-					#正则表达式分析行记录
-					pattern = re.compile(strPattern) #re.S表示多行匹配,此不需要
+					#
+					pattern = re.compile(strPattern)
 					items = re.findall(pattern,lineline)
 					if items:
 						for item in items:
 							print item[0],item[1]
-						#发邮件通知
+						#send email to notify someone
 						print "lineNum:" + str(lineNum)
 						for itimes in range(5):
 							if self.canSend :
 								'''
 								try :
 									self.mailobj.setsubject('Server Error')
-									linelinetext = "区服ID: " + self.serverID + "\n"+ lineline + "\nnow :" +str(time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(time.time())))
+									linelinetext = "ServerID: " + self.serverID + "\n"+ lineline + "\nnow :" +str(time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(time.time())))
 									self.mailobj.settext(linelinetext)
 									self.mailobj.sendmail()
 									self.mailobj.clearContext()
@@ -238,19 +269,17 @@ class MonitorLog:
 								'''
 								write(self.contentQueue,self.lock,lineline)
 							itimes += 1
-							print "times :" + str(itimes)
+							#print "times :" + str(itimes)
 					else:
 						print str(lineNum) + " :Not Found"
 				else:
 					print "now line is null"
-				#自主循环
 				lineNum += 1
-				#一次性读取行数
 				if lineNum % self.linespilte == 0:
 					count = lineNum
 					break;
 					
-				#读到结尾
+				#
 				endlinenum = cachelines - 1
 				#print str(lineNum)+":::::"+str(endlinenum)
 				if lineNum == endlinenum:
@@ -262,15 +291,15 @@ class MonitorLog:
 			linecache.clearcache()
 		
 if __name__ == "__main__":
-	#读取配置文件，邮箱用户名，密码等内容
+	
 	ConfFile = "mailConf.ini"
 	if not os.path.exists(ConfFile) :
 		print "Config file not exist,please check path of config file."
 		sys.exit(1)
 		
-	#读取账号信息
+	# get configuration infomation
 	cfgobj = ReadConf(ConfFile)
-	#读取邮箱服务商的个数
+	#get mail service providers number
 	InfoSize = cfgobj.getInt('Global','InfoSize')
 	list_mailobj = []
 	
@@ -285,6 +314,7 @@ if __name__ == "__main__":
 		
 		ServerID = cfgobj.get('ServerInfo_%d'%i,'ServerID')
 		OnceReadLines = cfgobj.getInt('ServerInfo_%d'%i,'OnceReadLines')
+		OnceSendLines = cfgobj.get('ServerInfo_%d'%i,'OnceSendLines')
 		ZoneLogPath = cfgobj.get('ServerInfo_%d'%i,'ZoneLogPath')
 		
 		ZoneLogName=cfgobj.get('logInfo_%d'%i,'ZoneLogName')
@@ -293,8 +323,9 @@ if __name__ == "__main__":
 		
 		#print Username,Pwd,Stmp,From,To,Encoding
 		#print ServerID,OnceReadLines,ZoneLogName,DateFormat,LogPostfix
-		#发送邮件
-		mailobj = MailHelper("This is python obj",Username,Pwd,Stmp,From,To,ServerID,Encoding)
+		#print OnceSendLines
+		#init mailobj
+		mailobj = MailHelper("This is python obj",Username,Pwd,Stmp,From,To,ServerID,Encoding,OnceSendLines)
 		list_mailobj.append(mailobj)
 		
 	#print list_mailobj[0].getSubject(),list_mailobj[0].getUsername(),list_mailobj[0].getPwd()
@@ -303,10 +334,13 @@ if __name__ == "__main__":
 	
 	manager = multiprocessing.Manager()
 	contentQueue = manager.Queue()
-	lock = manager.Lock() #初始化一把锁
+	lock = manager.Lock() #init lock
 	p = Pool(1)
 	pr = p.apply_async(read,args=(contentQueue,list_mailobj,InfoSize))
 	p.close()
+	#p = Process(target=read,args=(contentQueue,list_mailobj,InfoSize))
+	#p.start()
+	#print "Main PID:"+str(os.getpid())
 	
 	monitorobj = MonitorLog(OnceReadLines,ZoneLogPath,contentQueue,lock)
 	monitorobj.setDateFormat(DateFormat)
@@ -314,6 +348,7 @@ if __name__ == "__main__":
 	monitorobj.setLogPostfix(LogPostfix)
 	monitorobj.setSendMailFlag(1)
 	monitorobj.monitor()
+	
 	
 	
 	
