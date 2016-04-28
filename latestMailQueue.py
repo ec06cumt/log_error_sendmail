@@ -209,7 +209,7 @@ class MonitorLog:
 	
 	#
 	def monitor(self):
-		print 'filename %s' % self.logZonePath
+		#print 'filename %s' % self.logZonePath
 		filename=""
 		#had read lines
 		count = 0
@@ -220,7 +220,7 @@ class MonitorLog:
 		while True:
 			# get date
 			thistime = time.strftime(self.dateFormat, time.localtime(time.time()))
-			currfilename = self.logZonePath + "\\" + self.logZoneName +"_"+ str(thistime)+ self.logPostfix
+			currfilename = self.logZonePath + "/" + self.logZoneName +"_"+ str(thistime)+ self.logPostfix
 			
 			if not os.path.exists(currfilename) :
 				print "%s not exist,please check path of config file." % currfilename
@@ -232,7 +232,7 @@ class MonitorLog:
 			else :
 				waittimescount = 0
 				
-			#print currfilename
+			print currfilename
 			if filename != currfilename:
 				count=0
 				filename = currfilename
@@ -241,11 +241,10 @@ class MonitorLog:
 			cache_data = linecache.getlines(filename)
 			cachelines = len(cache_data)
 			#print "Lines: " + str(cachelines) + " Now:"+str(time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(time.time())))
-			currLineNumber = 0
-			#try: 
-			if currLineNumber >= cachelines :
-				continue
 			#all_the_text = file_object.read()
+			#if count == (cachelines - 1):
+			#	continue
+			
 			for lineNum in range(count,cachelines):
 				lineline = cache_data[lineNum]
 				#print lineline
@@ -257,7 +256,7 @@ class MonitorLog:
 						for item in items:
 							print item[0],item[1]
 						#send email to notify someone
-						print "lineNum:" + str(lineNum)
+						print "lineNum:" ,lineNum
 						#for itimes in range(2):
 						if self.canSend :
 							'''
@@ -272,26 +271,34 @@ class MonitorLog:
 								print str(e)
 							time.sleep(5)
 							'''
+							linelinetext = ''
+							linelinetext = self.logZoneName +"--"+lineline
 							self.lock.acquire() #add lock
-							self.contentQueue.put(lineline)
+							self.contentQueue.put(linelinetext)
+							lineline = ''
 							self.lock.release() #release lock
+							
 							#write(self.contentQueue,self.lock,lineline)
 						#itimes += 1
 							#print "times :" + str(itimes)
 					else:
-						print str(lineNum) + " :Not Found"
+						print lineNum, " Not Found"
 				else:
 					print "now line is null"
-				lineNum += 1
-				if lineNum % self.linespilte == 0:
-					count = lineNum
+				
+				
+				if lineNum > 0 and ((lineNum+1) % self.linespilte == 0):
+					count = lineNum + 1
 					break;
-					
+
 				#
 				endlinenum = cachelines - 1
 				#print str(lineNum)+":::::"+str(endlinenum)
-				if lineNum == endlinenum:
+				if int(lineNum) == int(endlinenum):
 					count = cachelines
+					break
+				lineNum += 1	
+				
 			#except Exception,e: 
 				#print str(e) 
 				#fileobject.close() 
