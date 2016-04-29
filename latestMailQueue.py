@@ -20,7 +20,7 @@ import smtplib
 from email.mime.text import MIMEText  
 from email.header import Header
 
-strPattern='\[(.*)\]\s+<(.*?)>\s+Failed to decode(.*?)'
+#strPattern='\[(.*)\]\s+<(.*?)>\s+[Ff]ailed to decode(.*?)'
 #logZoneName = "GameZoneServer_"
 #logPostfix = ".log"
 #dateFormat = '%Y-%m-%d'
@@ -36,20 +36,30 @@ def write(q,lock,linetext):
 #you can define your email strategy with mutiprocess.
 #for some reason,some email service providers might forbit your email address,
 #so you had to use serval email address.
-	
-def read(q,list_mailobj,InfoSize):
+#lineline:[4](index)[10](linenum)
+def read(q,list_mailobj,InfoSize,list_indexlinenum,cfgobj):
 	iCount = 0
+	bSendMail = 0
 	while True:
 		index = iCount % InfoSize
 		iGetCount = 0
 		strContext = ''
 		time.sleep(10)
-		#print "read"
+		print "read"
 		MaxSendlines = list_mailobj[index].getSendLines()
+		bSendMail = 0
 		while not q.empty():
+			
 			#set read line limited,so that send many lines by one email  (add on 2016/04/28 by liugao)
 			lineline = q.get(False)
 			if lineline:
+				iIndex = int(lineline[0:4])
+				iLineNum = int(lineline[4:14])
+				print iIndex,iLineNum
+				#write linenum
+				if iLineNum > list_indexlinenum[iIndex]:
+					list_indexlinenum[iIndex] = iLineNum + 1
+				lineline = lineline[14:]
 				iGetCount += 1
 				strContext += lineline
 			else:
@@ -65,9 +75,17 @@ def read(q,list_mailobj,InfoSize):
 					list_mailobj[index].sendmail()
 					list_mailobj[index].clearContext()
 					linelinetext = ''
+					bSendMail = 1
 				except Execption,e:
+					bSendMail = 0
 					print str(e)
-				
+					
+				#print "####################:",str(bSendMail)
+				if bSendMail:
+					for i in range(len(list_indexlinenum)):
+						cfgobj.setWrite('logInfo_%d'%i,'ReadLines',str(list_indexlinenum[i]))
+				else :
+					print "else list_indexlinenum",len(list_indexlinenum)
 				#print "max:",iGetCount
 				iGetCount = 0	
 				strContext = ''
@@ -85,8 +103,17 @@ def read(q,list_mailobj,InfoSize):
 				list_mailobj[index].sendmail()
 				list_mailobj[index].clearContext()
 				linelinetext = ''
+				bSendMail = 1
 			except Execption,e:
+				bSendMail = 0
 				print str(e)
+				
+			#print "####################:",str(bSendMail)
+			if bSendMail:
+				for i in range(len(list_indexlinenum)):
+					cfgobj.setWrite('logInfo_%d'%i,'ReadLines',str(list_indexlinenum[i]))
+			else :
+				print "else list_indexlinenum",len(list_indexlinenum)
 			
 			#print "other:",iGetCount,MaxSendlines
 			iGetCount = 0
@@ -118,6 +145,21 @@ class ReadConf:
 		except:
 			iResult = 0
 		return iResult
+	def set(self,section,option,value):
+		try:
+			self.cf.set(section,option,value)
+		except Exception,e:
+			print str(e)
+	
+	def setWrite(self,section,option,value):
+		try:
+			self.cf.set(section,option,value)
+			print self.cf.get(section,option)
+			self.cf.write(open(self.path,'w'))
+		except Exception,e:
+			print str(e)
+		
+		
 		
 		
 class MailHelper:
@@ -181,7 +223,8 @@ class MailHelper:
 
 #read log file per 5s
 class MonitorLog:
-	def __init__(self,OnceReadLines,zoneLogPath,contentQueue,lock):
+	def __init__(self,index,OnceReadLines,zoneLogPath,contentQueue,lock,ReadLines):
+		self.index = index
 		self.linespilte = OnceReadLines
 		self.logZonePath = zoneLogPath
 		self.canSend = 0
@@ -190,7 +233,11 @@ class MonitorLog:
 		self.logPostfix = ''
 		self.contentQueue = contentQueue
 		self.lock = lock
-		
+		self.regPattern = ''
+		self.readlines = ReadLines
+	
+	def setRegPattern(self,strPattern):
+		self.regPattern = strPattern
 	#send mailor not
 	def setSendMailFlag(self,bCanSend):
 		self.canSend = bCanSend
@@ -212,7 +259,7 @@ class MonitorLog:
 		#print 'filename %s' % self.logZonePath
 		filename=""
 		#had read lines
-		count = 0
+		count = int(self.readlines)
 		#
 		waittime = 1.25
 		waittimescount = 0
@@ -233,7 +280,10 @@ class MonitorLog:
 				waittimescount = 0
 				
 			print currfilename
-			if filename != currfilename:
+			if filename == "" :
+				filename = currfilename
+			
+			if filename != "" and filename != currfilename:
 				count=0
 				filename = currfilename
 				linecache.clearcache()
@@ -244,13 +294,15 @@ class MonitorLog:
 			#all_the_text = file_object.read()
 			#if count == (cachelines - 1):
 			#	continue
-			
+			#print "====================:",count
+			if count > cachelines:
+				count = cachelines
 			for lineNum in range(count,cachelines):
 				lineline = cache_data[lineNum]
 				#print lineline
 				if lineline:
 					#
-					pattern = re.compile(strPattern)
+					pattern = re.compile(self.regPattern)
 					items = re.findall(pattern,lineline)
 					if items:
 						for item in items:
@@ -272,7 +324,17 @@ class MonitorLog:
 							time.sleep(5)
 							'''
 							linelinetext = ''
-							linelinetext = self.logZoneName +"--"+lineline
+							strlineIndex = ''
+							lineCount = ''
+							strlineIndex = str(self.index)
+							#print "strlineIndex:",strlineIndex
+							strlineIndex = strlineIndex.zfill(4)
+							#print strlineIndex2
+							iCounLineNum = lineNum
+							lineCount = str(iCounLineNum)
+							lineCount = lineCount.zfill(10)
+							linelinetext = strlineIndex + lineCount + self.logZoneName +"--"+lineline
+							print linelinetext
 							self.lock.acquire() #add lock
 							self.contentQueue.put(linelinetext)
 							lineline = ''
@@ -321,7 +383,7 @@ if __name__ == "__main__":
 	InfoSize = cfgobj.getInt('Global','InfoSize')
 	ServerMonitor = cfgobj.getInt('Global','ServerMonitor')
 	list_mailobj = []
-	
+	list_indexlinenum = []
 	for i in range(InfoSize):
 		Username = cfgobj.get('UserInfo_%d'%i,'Username')
 		Pwd = cfgobj.get('UserInfo_%d'%i,'Password')
@@ -335,24 +397,14 @@ if __name__ == "__main__":
 		
 		OnceSendLines = cfgobj.get('ServerInfo_%d'%i,'OnceSendLines')
 		
-		#print Username,Pwd,Stmp,From,To,Encoding
-		#print ServerID,OnceReadLines,ZoneLogName,DateFormat,LogPostfix
-		#print OnceSendLines
 		#init mailobj
 		mailobj = MailHelper("This is python obj",Username,Pwd,Stmp,From,To,ServerID,Encoding,OnceSendLines)
 		list_mailobj.append(mailobj)
 		
-	#print list_mailobj[0].getSubject(),list_mailobj[0].getUsername(),list_mailobj[0].getPwd()
-	#print list_mailobj[1].getSubject(),list_mailobj[1].getUsername(),list_mailobj[1].getPwd()
-	#print list_mailobj[2].getSubject(),list_mailobj[2].getUsername(),list_mailobj[2].getPwd()
-	
 	manager = multiprocessing.Manager()
 	contentQueue = manager.Queue()
 	lock = manager.Lock() #init lock
-	#read process is single process so the number is ServerMonitor+1
 	p = multiprocessing.Pool(ServerMonitor+1)
-	pr = p.apply_async(read,args=(contentQueue,list_mailobj,InfoSize))
-	#print "ServerMonitor:",ServerMonitor
 	
 	for index in range(ServerMonitor):
 		LogPath = cfgobj.get('logInfo_%d'%index,'LogPath')
@@ -360,15 +412,21 @@ if __name__ == "__main__":
 		DateFormat=cfgobj.get('logInfo_%d'%index,'DateFormat')
 		LogPostfix =cfgobj.get('logInfo_%d'%index,'LogPostfix')
 		OnceReadLines = cfgobj.getInt('logInfo_%d'%index,'OnceReadLines')
+		ReadLines = cfgobj.getInt('logInfo_%d'%index,'hasreadlines')
+		RegPattern = cfgobj.get('logInfo_%d'%index,'RegPattern')
 		
-		monitorobj= MonitorLog(OnceReadLines,LogPath,contentQueue,lock)
+		list_indexlinenum.append(ReadLines)
+		#print "$$$$$$$$$$$$$$",ReadLines
+		monitorobj= MonitorLog(index,OnceReadLines,LogPath,contentQueue,lock,ReadLines)
 		monitorobj.setDateFormat(DateFormat)
 		monitorobj.setLogName(LogName)
 		monitorobj.setLogPostfix(LogPostfix)
+		monitorobj.setRegPattern(RegPattern)
 		monitorobj.setSendMailFlag(1)
 		#print str(index) + LogPath + LogName + DateFormat + LogPostfix + str(OnceReadLines)
 		p.apply_async(monitorlogprocess,args=(monitorobj,))
-	
+
+	pr = p.apply_async(read,args=(contentQueue,list_mailobj,InfoSize,list_indexlinenum,cfgobj))
 	p.close()
 	while True:
 		time.sleep(9)
