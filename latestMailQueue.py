@@ -25,6 +25,32 @@ from email.header import Header
 #logPostfix = ".log"
 #dateFormat = '%Y-%m-%d'
 
+#
+g_strGlobal = "Global"
+g_strInfoSize = "InfoSize"
+g_strMonSize = "servermonitor"
+g_strUserInfo = "UserInfo_%d"
+g_UsrName="Username"
+g_strPwd="Password"
+g_strStmp="MailStmp"
+g_strMailinfo="MailInfo_%d"
+g_strFrom="From"
+g_strTo="To"
+g_strEncoding="Encoding"
+g_strServerinfo="ServerInfo_%d"
+g_strServerID="ServerID"
+g_strOnceSendlins="OnceSendLines"
+g_strLoginfo="logInfo_%d"
+g_strLogPath = "LogPath"
+g_strLogName= "LogName"
+g_strDateFormat= "DateFormat"
+g_strLogPostfix= "LogPostfix"
+g_strOnceReadlines= "OnceReadLines"
+g_strHasReadlines= "hasreadlines"
+g_strRegpattern= "RegPattern"
+g_strHasReadDate= "hasreaddate"
+
+
 
 #input msg into Queue
 def write(q,lock,linetext):
@@ -83,7 +109,10 @@ def read(q,list_mailobj,InfoSize,list_indexlinenum,cfgobj):
 				#print "####################:",str(bSendMail)
 				if bSendMail:
 					for i in range(len(list_indexlinenum)):
-						cfgobj.setWrite('logInfo_%d'%i,'ReadLines',str(list_indexlinenum[i]))
+						DateFormat=cfgobj.get(g_strLoginfo%i,g_strDateFormat)
+						strNow = str(time.strftime(DateFormat,time.localtime(time.time())))
+						cfgobj.setWrite(g_strLoginfo%i,g_strHasReadDate,strNow)
+						cfgobj.setWrite(g_strLoginfo%i,g_strHasReadlines,str(list_indexlinenum[i]))
 				else :
 					print "else list_indexlinenum",len(list_indexlinenum)
 				#print "max:",iGetCount
@@ -111,7 +140,10 @@ def read(q,list_mailobj,InfoSize,list_indexlinenum,cfgobj):
 			#print "####################:",str(bSendMail)
 			if bSendMail:
 				for i in range(len(list_indexlinenum)):
-					cfgobj.setWrite('logInfo_%d'%i,'ReadLines',str(list_indexlinenum[i]))
+					DateFormat=cfgobj.get(g_strLoginfo%i,g_strDateFormat)
+					strNow = str(time.strftime(DateFormat,time.localtime(time.time())))
+					cfgobj.set(g_strLoginfo%i,g_strHasReadDate,strNow)
+					cfgobj.setWrite(g_strLoginfo%i,g_strHasReadlines,str(list_indexlinenum[i]))
 			else :
 				print "else list_indexlinenum",len(list_indexlinenum)
 			
@@ -130,6 +162,84 @@ class ReadConf:
 		except:
 			print 'read config file failed'
 			sys.exit(1)
+			
+	def checkSection(self):
+		if not self.cf.has_section(g_strGlobal):
+			return False
+		if not self.cf.has_option(g_strGlobal,g_strInfoSize):
+			return False
+		if not self.cf.has_option(g_strGlobal,g_strMonSize):
+			return False
+			
+		infosize = self.cf.getint(g_strGlobal,g_strInfoSize)
+		monitorsize = self.cf.getint(g_strGlobal,g_strMonSize)
+		print infosize,monitorsize
+		for i in range(infosize):
+			if not self.cf.has_section(g_strUserInfo%i):
+				print "has no %s"%g_strUserInfo
+				return False
+			if not self.cf.has_option(g_strUserInfo%i,g_UsrName):
+				print "has no %s"%g_UsrName
+				return False
+			if not self.cf.has_option(g_strUserInfo%i,g_strPwd):
+				print "has no %s"%g_strPwd
+				return False
+			if not self.cf.has_option(g_strUserInfo%i,g_strStmp):
+				print "has no %s"%g_strStmp
+				return False
+			
+			if not self.cf.has_section(g_strMailinfo%i):
+				print "has no %s"%g_strMailinfo
+				return False
+			if not self.cf.has_option(g_strMailinfo%i,g_strFrom):
+				print "has no %s"%g_strFrom
+				return False
+			if not self.cf.has_option(g_strMailinfo%i,g_strTo):
+				print "has no %s"%g_strTo
+				return False
+			if not self.cf.has_option(g_strMailinfo%i,g_strEncoding):
+				print "has no %s"%g_strEncoding
+				return False
+				
+			if not self.cf.has_section(g_strServerinfo%i):
+				print "has no %s"%g_strServerinfo
+				return False
+			if not self.cf.has_option(g_strServerinfo%i,g_strServerID):
+				print "has no %s"%g_strServerID
+				return False
+			if not self.cf.has_option(g_strServerinfo%i,g_strOnceSendlins):
+				print "has no %s"%g_strOnceSendlins
+				return False
+		print "check mail info success"
+		for j in range(monitorsize):
+			if not self.cf.has_section(g_strLoginfo%j):
+				print "has no %s,%d"%(g_strLoginfo,j)
+				return False
+			if not self.cf.has_option(g_strLoginfo%j,g_strLogPath):
+				print "has no %s"%g_strLogPath
+				return False
+			if not self.cf.has_option(g_strLoginfo%j,g_strLogName):
+				print "has no %s"%g_strLogName
+				return False
+			if not self.cf.has_option(g_strLoginfo%j,g_strDateFormat):
+				print "has no %s"%g_strDateFormat
+				return False
+			if not self.cf.has_option(g_strLoginfo%j,g_strLogPostfix):
+				print "has no %s"%g_strLogPostfix
+				return False
+			if not self.cf.has_option(g_strLoginfo%j,g_strOnceReadlines):
+				print "has no %s"%g_strOnceReadlines
+				return False
+			if not self.cf.has_option(g_strLoginfo%j,g_strHasReadlines):
+				print "has no %s"%g_strHasReadlines
+				return False
+			if not self.cf.has_option(g_strLoginfo%j,g_strRegpattern):
+				print "has no %s"%g_strRegpattern
+				return False
+			if not self.cf.has_option(g_strLoginfo%j,g_strHasReadDate):
+				print "has no %s"%g_strHasReadDate
+				return False
+		return True
 	
 	def get(self,field,key):
 		result=""
@@ -267,7 +377,7 @@ class MonitorLog:
 		while True:
 			# get date
 			thistime = time.strftime(self.dateFormat, time.localtime(time.time()))
-			currfilename = self.logZonePath + "/" + self.logZoneName +"_"+ str(thistime)+ self.logPostfix
+			currfilename = self.logZonePath + "/" + self.logZoneName+ str(thistime)+ self.logPostfix
 			
 			if not os.path.exists(currfilename) :
 				print "%s not exist,please check path of config file." % currfilename
@@ -379,23 +489,30 @@ if __name__ == "__main__":
 		
 	# get configuration infomation
 	cfgobj = ReadConf(ConfFile)
+	if not cfgobj.checkSection():
+		print "check cfg fialed,please check ini"
+		sys.exit(1)
+	else :
+		print "check ini config file success"
+		#sys.exit(1)
+		
 	#get mail service providers number
-	InfoSize = cfgobj.getInt('Global','InfoSize')
-	ServerMonitor = cfgobj.getInt('Global','ServerMonitor')
+	InfoSize = cfgobj.getInt(g_strGlobal,g_strInfoSize)
+	ServerMonitor = cfgobj.getInt(g_strGlobal,g_strMonSize)
 	list_mailobj = []
 	list_indexlinenum = []
 	for i in range(InfoSize):
-		Username = cfgobj.get('UserInfo_%d'%i,'Username')
-		Pwd = cfgobj.get('UserInfo_%d'%i,'Password')
-		Stmp = cfgobj.get('UserInfo_%d'%i,'MailStmp')
+		Username = cfgobj.get(g_strUserInfo%i,g_UsrName)
+		Pwd = cfgobj.get(g_strUserInfo%i,g_strPwd)
+		Stmp = cfgobj.get(g_strUserInfo%i,g_strStmp)
 		
-		From = cfgobj.get('MailInfo_%d'%i,'From')
-		To = cfgobj.get('MailInfo_%d'%i,'To')
-		Encoding = cfgobj.get('MailInfo_%d'%i,'Encoding')
+		From = cfgobj.get(g_strMailinfo%i,g_strFrom)
+		To = cfgobj.get(g_strMailinfo%i,g_strTo)
+		Encoding = cfgobj.get(g_strMailinfo%i,g_strEncoding)
 		
-		ServerID = cfgobj.get('ServerInfo_%d'%i,'ServerID')
+		ServerID = cfgobj.get(g_strServerinfo%i,g_strServerID)
 		
-		OnceSendLines = cfgobj.get('ServerInfo_%d'%i,'OnceSendLines')
+		OnceSendLines = cfgobj.get(g_strServerinfo%i,g_strOnceSendlins)
 		
 		#init mailobj
 		mailobj = MailHelper("This is python obj",Username,Pwd,Stmp,From,To,ServerID,Encoding,OnceSendLines)
@@ -407,13 +524,18 @@ if __name__ == "__main__":
 	p = multiprocessing.Pool(ServerMonitor+1)
 	
 	for index in range(ServerMonitor):
-		LogPath = cfgobj.get('logInfo_%d'%index,'LogPath')
-		LogName=cfgobj.get('logInfo_%d'%index,'LogName')
-		DateFormat=cfgobj.get('logInfo_%d'%index,'DateFormat')
-		LogPostfix =cfgobj.get('logInfo_%d'%index,'LogPostfix')
-		OnceReadLines = cfgobj.getInt('logInfo_%d'%index,'OnceReadLines')
-		ReadLines = cfgobj.getInt('logInfo_%d'%index,'hasreadlines')
-		RegPattern = cfgobj.get('logInfo_%d'%index,'RegPattern')
+		LogPath = cfgobj.get(g_strLoginfo%index,g_strLogPath)
+		LogName=cfgobj.get(g_strLoginfo%index,g_strLogName)
+		DateFormat=cfgobj.get(g_strLoginfo%index,g_strDateFormat)
+		LogPostfix =cfgobj.get(g_strLoginfo%index,g_strLogPostfix)
+		OnceReadLines = cfgobj.getInt(g_strLoginfo%index,g_strOnceReadlines)
+		ReadLines = cfgobj.getInt(g_strLoginfo%index,g_strHasReadlines)
+		RegPattern = cfgobj.get(g_strLoginfo%index,g_strRegpattern)
+		hasreaddate=cfgobj.get(g_strLoginfo%index,g_strHasReadDate)
+		strNow = str(time.strftime(DateFormat,time.localtime(time.time())))
+		if strNow != hasreaddate.strip():
+			print "data is not the same day"
+			ReadLines = 0
 		
 		list_indexlinenum.append(ReadLines)
 		#print "$$$$$$$$$$$$$$",ReadLines
